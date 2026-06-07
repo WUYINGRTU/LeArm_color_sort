@@ -1,0 +1,27 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Keil / MDK build outputs and user-local files
+*.o
+*.d
+*.crf
+*.lst
+*.map
+*.lnp
+*.axf
+*.hex
+*.htm
+*.dep
+*.iex
+*.uvguix.*
+
+# Large CMSIS algorithm/example/prebuilt packages not referenced by this project
+STM32/LeArm/Drivers/CMSIS/DSP/
+STM32/LeArm/Drivers/CMSIS/NN/
+STM32/LeArm/Drivers/CMSIS/Lib/
+
+# Misc local editor state
+.vscode/.browse.c_cpp.db*
+.vscode/ipch/
+.vscode/*.log
