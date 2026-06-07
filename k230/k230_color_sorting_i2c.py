@@ -60,7 +60,7 @@ debug_mode = 0
 # Tune these LAB thresholds under your real light source and actual color blocks.
 thresholds = [
     (21, 82, 35, 127, 0, 82),      # 1 Red
-    (33, 100, -46, -26, -61, 127), # 2 Green
+    (25, 100, -70, -10, -40, 60),  # 2 Green
     (34, 100, -20, 18, -41, -11),  # 3 Blue
     (65, 78, -10, -5, 38, 50),     # 4 Yellow
     (20, 50, 17, 37, -34, -14),    # 5 Purple
@@ -74,7 +74,14 @@ color_draw = [
     (255, 255, 0),
     (128, 0, 128),
 ]
-code_to_id = {1: 1, 2: 2, 4: 3, 8: 4, 16: 5}
+code_to_id = ((1, 1), (2, 2), (4, 3), (8, 4), (16, 5))
+
+
+def get_color_id(blob_code):
+    for code_bit, color_id in code_to_id:
+        if blob_code & code_bit:
+            return color_id
+    return None
 
 
 def put_u16_le(data, offset, value):
@@ -162,7 +169,7 @@ def detection():
                     merge=True,
                     margin=10,
                 ):
-                    color_id = code_to_id.get(blob.code())
+                    color_id = get_color_id(blob.code())
                     if color_id is None:
                         continue
 

@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 
+# Local debug captures
+debug_*.jpg
+
 # Keil / MDK build outputs and user-local files
 *.o
 *.d
