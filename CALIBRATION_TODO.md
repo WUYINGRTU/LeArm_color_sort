@@ -4,8 +4,8 @@
 
 ## 接线
 
-- K230 I2C SCL / 手册引脚 11 -> STM32 PB6 / I2C1_SCL
-- K230 I2C SDA / 手册引脚 12 -> STM32 PB7 / I2C1_SDA
+- K230 I2C SCL -> STM32 PB6 / I2C1_SCL
+- K230 I2C SDA -> STM32 PB7 / I2C1_SDA
 - K230 GND -> STM32 GND
 - I2C 电平：3.3V，SCL/SDA 需要上拉电阻
 - I2C 从机地址：`0x32`
@@ -19,9 +19,8 @@
 
 在 `K210/k230_color_sorting_i2c.py` 中修改：
 
-- `I2C_SLAVE_LIST_INDEX`：`I2C_Slave.list()` 返回列表中的索引。手册示例返回 `[2]`，所以默认索引 `0` 会使用设备 ID `2`。
+- `I2C_SLAVE_ID_INDEX`：K230 实际启用的 I2C 从机通道编号，可通过脚本打印的 `I2C_Slave.list()` 确认。
 - `I2C_SLAVE_ADDR`：默认 `0x32`，需要和 STM32 `wonder_mv.h` 中的 `WONDERMV_ADDR` 一致。
-- `K230_I2C_SCL_PIN` / `K230_I2C_SDA_PIN`：默认按手册配置为 11 / 12。
 - `thresholds`：红、绿、蓝、黄、紫的 LAB 阈值，需要在你的灯光和色块下实测。
 - `MIN_PIXELS` / `MIN_AREA`：过滤太小的误检。
 - `MIN_ASPECT_RATIO` / `MAX_ASPECT_RATIO`：过滤不像正方形的色块。

@@ -41,6 +41,18 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+typedef enum
+{
+	SORT_STATE_DETECT = 0,
+	SORT_STATE_TRACK_CENTER,
+	SORT_STATE_APPROACH,
+	SORT_STATE_GRAB_DOWN,
+	SORT_STATE_CLAW_CLOSE,
+	SORT_STATE_LIFT,
+	SORT_STATE_PLACE,
+	SORT_STATE_RETURN
+} SortStateTypeDef;
+
 RecognitionHanleTypeDef color;
 /* USER CODE END PTD */
 
@@ -71,8 +83,8 @@ RecognitionHanleTypeDef color;
 #define VISION_CAPTURE_Y_CM             0.0f
 #define VISION_CAPTURE_Z_CM            -3.0f
 
-#define VISION_X_CM_PER_PIXEL           0.050f
-#define VISION_Y_CM_PER_PIXEL           0.050f
+#define VISION_X_CM_PER_PIXEL           0.100f
+#define VISION_Y_CM_PER_PIXEL          -0.050f
 #define CAMERA_TO_CLAW_X_OFFSET_CM      0.0f
 #define CAMERA_TO_CLAW_Y_OFFSET_CM      0.0f
 
@@ -82,6 +94,16 @@ RecognitionHanleTypeDef color;
 #define VISION_TARGET_MAX_X_CM         20.0f
 #define VISION_TARGET_MIN_Y_CM        -10.0f
 #define VISION_TARGET_MAX_Y_CM         10.0f
+
+#define TRACK_CENTER_X                160.0f
+#define TRACK_CENTER_Y                120.0f
+#define TRACK_DEADBAND_X_PX             8.0f
+#define TRACK_DEADBAND_Y_PX             8.0f
+#define TRACK_STABLE_FRAMES             3
+#define TRACK_LOST_MAX_FRAMES          10
+#define TRACK_CORRECTION_GAIN           0.30f
+#define TRACK_MAX_STEP_X_CM             0.5f
+#define TRACK_MAX_STEP_Y_CM             0.5f
 
 #define CLAW_OPEN_ANGLE                90.0f
 #define CLAW_CLOSE_ANGLE                0.0f
@@ -106,11 +128,14 @@ RecognitionHanleTypeDef color;
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint16_t dis;
-uint8_t running_state;
-uint8_t finish_count;
+SortStateTypeDef running_state = SORT_STATE_DETECT;
+uint8_t tracked_color_id;
+uint8_t stable_count;
+uint8_t lost_count;
 float target_x;
 float target_y;
+float grab_x;
+float grab_y;
 
 /* USER CODE END PV */
 
@@ -143,16 +168,32 @@ static float clamp_float(float value, float min_value, float max_value)
 	return value;
 }
 
-static void vision_to_arm_target(const RecognitionHanleTypeDef* vision, float* arm_x, float* arm_y)
+static uint8_t is_sortable_color(uint8_t color_id)
 {
-	float pixel_dx = (float)vision->position.x - VISION_CENTER_X;
-	float pixel_dy = (float)vision->position.y - VISION_CENTER_Y;
+	return (color_id >= 1 && color_id <= 3);
+}
 
-	*arm_x = VISION_CAPTURE_X_CM + pixel_dy * VISION_X_CM_PER_PIXEL + CAMERA_TO_CLAW_X_OFFSET_CM;
-	*arm_y = VISION_CAPTURE_Y_CM + pixel_dx * VISION_Y_CM_PER_PIXEL + CAMERA_TO_CLAW_Y_OFFSET_CM;
+static void reset_tracking_state(void)
+{
+	memset(&color, 0, sizeof(RecognitionHanleTypeDef));
+	tracked_color_id = 0;
+	stable_count = 0;
+	lost_count = 0;
+	target_x = VISION_CAPTURE_X_CM;
+	target_y = VISION_CAPTURE_Y_CM;
+	grab_x = VISION_CAPTURE_X_CM;
+	grab_y = VISION_CAPTURE_Y_CM;
+}
 
-	*arm_x = clamp_float(*arm_x, VISION_TARGET_MIN_X_CM, VISION_TARGET_MAX_X_CM);
-	*arm_y = clamp_float(*arm_y, VISION_TARGET_MIN_Y_CM, VISION_TARGET_MAX_Y_CM);
+static void move_to_capture_pose(uint32_t time_ms)
+{
+	robot_arm_coordinate_set(VISION_CAPTURE_X_CM, VISION_CAPTURE_Y_CM, VISION_CAPTURE_Z_CM, 0, -90, 90, time_ms);
+}
+
+static void update_grab_target(void)
+{
+	grab_x = clamp_float(target_x + CAMERA_TO_CLAW_X_OFFSET_CM, VISION_TARGET_MIN_X_CM, VISION_TARGET_MAX_X_CM);
+	grab_y = clamp_float(target_y + CAMERA_TO_CLAW_Y_OFFSET_CM, VISION_TARGET_MIN_Y_CM, VISION_TARGET_MAX_Y_CM);
 }
 
 static void move_to_color_place(uint8_t color_id)
@@ -234,7 +275,8 @@ int main(void)
   buzzer_init();
   ultrasound_init();
   wonder_mv_init();
-  robot_arm_coordinate_set(VISION_CAPTURE_X_CM, VISION_CAPTURE_Y_CM, VISION_CAPTURE_Z_CM, 0, -90, 90, 500);
+  reset_tracking_state();
+  move_to_capture_pose(500);
   robot_arm_claw_set(CLAW_OPEN_ANGLE, 0);
   /* USER CODE END 2 */
 
@@ -248,55 +290,123 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	switch(running_state)
 	{
-		case 0:
-			wonder_mv_color_recognition(&color);
-			if(color.id != 0)
+		case SORT_STATE_DETECT:
+			if(wonder_mv_color_recognition(&color) && is_sortable_color(color.id))
 			{
 				HAL_Delay(100);
 				wonder_mv_color_recognition(&color);
-				if(color.id != 0)
+				if(is_sortable_color(color.id))
 				{
-					vision_to_arm_target(&color, &target_x, &target_y);
-					robot_arm_coordinate_set(target_x, target_y, VISION_APPROACH_Z_CM, 0, -90, 90, 1000);
-					HAL_Delay(1100);
-					running_state = 1;
+					tracked_color_id = color.id;
+					target_x = VISION_CAPTURE_X_CM;
+					target_y = VISION_CAPTURE_Y_CM;
+					stable_count = 0;
+					lost_count = 0;
+					running_state = SORT_STATE_TRACK_CENTER;
 					break;
 				}
 			}
 			HAL_Delay(10);
 			break;
-			
-		case 1:
-			robot_arm_coordinate_set(target_x, target_y, VISION_GRAB_Z_CM, 0, -90, 90, 1000);
+
+		case SORT_STATE_TRACK_CENTER:
+		{
+			float pixel_dx;
+			float pixel_dy;
+			float step_x;
+			float step_y;
+
+			if(!wonder_mv_color_recognition(&color) || color.id != tracked_color_id)
+			{
+				lost_count++;
+				stable_count = 0;
+				if(lost_count >= TRACK_LOST_MAX_FRAMES)
+				{
+					reset_tracking_state();
+					move_to_capture_pose(500);
+					HAL_Delay(600);
+					running_state = SORT_STATE_DETECT;
+				}
+				else
+				{
+					HAL_Delay(20);
+				}
+				break;
+			}
+
+			lost_count = 0;
+			pixel_dx = (float)color.position.x - TRACK_CENTER_X;
+			pixel_dy = (float)color.position.y - TRACK_CENTER_Y;
+
+			if(pixel_dx >= -TRACK_DEADBAND_X_PX && pixel_dx <= TRACK_DEADBAND_X_PX &&
+			   pixel_dy >= -TRACK_DEADBAND_Y_PX && pixel_dy <= TRACK_DEADBAND_Y_PX)
+			{
+				stable_count++;
+				if(stable_count >= TRACK_STABLE_FRAMES)
+				{
+					update_grab_target();
+					running_state = SORT_STATE_APPROACH;
+				}
+				HAL_Delay(20);
+				break;
+			}
+
+			stable_count = 0;
+			step_x = pixel_dy * VISION_X_CM_PER_PIXEL * TRACK_CORRECTION_GAIN;
+			step_y = pixel_dx * VISION_Y_CM_PER_PIXEL * TRACK_CORRECTION_GAIN;
+			step_x = clamp_float(step_x, -TRACK_MAX_STEP_X_CM, TRACK_MAX_STEP_X_CM);
+			step_y = clamp_float(step_y, -TRACK_MAX_STEP_Y_CM, TRACK_MAX_STEP_Y_CM);
+			target_x = clamp_float(target_x + step_x, VISION_TARGET_MIN_X_CM, VISION_TARGET_MAX_X_CM);
+			target_y = clamp_float(target_y + step_y, VISION_TARGET_MIN_Y_CM, VISION_TARGET_MAX_Y_CM);
+			robot_arm_coordinate_set(target_x, target_y, VISION_CAPTURE_Z_CM, 0, -90, 90, 80);
+			HAL_Delay(90);
+			break;
+		}
+
+		case SORT_STATE_APPROACH:
+			robot_arm_coordinate_set(grab_x, grab_y, VISION_APPROACH_Z_CM, 0, -90, 90, 1000);
 			HAL_Delay(1100);
-			running_state = 2;
+			running_state = SORT_STATE_GRAB_DOWN;
+			break;
+
+		case SORT_STATE_GRAB_DOWN:
+			robot_arm_coordinate_set(grab_x, grab_y, VISION_GRAB_Z_CM, 0, -90, 90, 1000);
+			HAL_Delay(1100);
+			running_state = SORT_STATE_CLAW_CLOSE;
 			break;
 		
-		case 2:
+		case SORT_STATE_CLAW_CLOSE:
 			robot_arm_claw_set(CLAW_CLOSE_ANGLE, 200);
 			HAL_Delay(200);
-			running_state = 3;
+			running_state = SORT_STATE_LIFT;
 			break;
 		
-		case 3:
-			robot_arm_coordinate_set(target_x, target_y, VISION_CAPTURE_Z_CM, 0, -90, 90, 1000);
+		case SORT_STATE_LIFT:
+			robot_arm_coordinate_set(grab_x, grab_y, VISION_CAPTURE_Z_CM, 0, -90, 90, 1000);
 			HAL_Delay(1100);
-			running_state = 4;
+			running_state = SORT_STATE_PLACE;
 			break;
 		
-		case 4:
-			move_to_color_place(color.id);
-			memset(&color,0,sizeof(RecognitionHanleTypeDef));
+		case SORT_STATE_PLACE:
+			move_to_color_place(tracked_color_id);
 			HAL_Delay(1100);
-			running_state = 5;
+			running_state = SORT_STATE_RETURN;
 			robot_arm_claw_set(CLAW_OPEN_ANGLE, 0);
 			HAL_Delay(500);
 			break;		
 		
-		case 5:
-			robot_arm_coordinate_set(VISION_CAPTURE_X_CM, VISION_CAPTURE_Y_CM, VISION_CAPTURE_Z_CM, 0, -90, 90, 500);
+		case SORT_STATE_RETURN:
+			move_to_capture_pose(500);
 			HAL_Delay(600);
-			running_state = 0;
+			reset_tracking_state();
+			running_state = SORT_STATE_DETECT;
+			break;
+
+		default:
+			reset_tracking_state();
+			move_to_capture_pose(500);
+			HAL_Delay(600);
+			running_state = SORT_STATE_DETECT;
 			break;
 	}
   }
