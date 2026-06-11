@@ -159,7 +159,7 @@ int main(void)
 	  case DETECITON:
 		  wonder_mv_color_recognition(&color_result);
 
-		  if(color_result.id == 3)
+		  if(color_result.id == 2)
 		  {
 			fsm_state = CALCULATE;
 		  }

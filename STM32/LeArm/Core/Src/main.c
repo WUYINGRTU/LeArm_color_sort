@@ -89,8 +89,8 @@ RecognitionHanleTypeDef color;
 #define CAMERA_TO_CLAW_X_OFFSET_CM      0.0f
 #define CAMERA_TO_CLAW_Y_OFFSET_CM      0.0f
 
-#define VISION_APPROACH_Z_CM            4.0f
-#define VISION_GRAB_Z_CM               -7.0f
+#define VISION_APPROACH_Z_CM            2.0f
+#define VISION_GRAB_Z_CM               -14.0f
 #define VISION_TARGET_MIN_X_CM         10.0f
 #define VISION_TARGET_MAX_X_CM         20.0f
 #define VISION_TARGET_MIN_Y_CM        -10.0f
