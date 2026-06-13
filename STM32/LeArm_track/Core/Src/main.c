@@ -57,7 +57,13 @@ RecognitionHanleTypeDef color_result;
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define TRACK_COLOR_ID                  2U
+#define COLOR_ID_RED                    1U
+#define COLOR_ID_GREEN                  2U
+#define COLOR_ID_BLUE                   3U
+
+#define KEY1_DEBOUNCE_MS               50U
+#define LED1_FLASH_ON_MS              300U
+#define LED1_FLASH_OFF_MS             300U
 
 #define VISION_CAPTURE_X_CM            15.0f
 #define VISION_CAPTURE_Y_CM             0.0f
@@ -65,7 +71,7 @@ RecognitionHanleTypeDef color_result;
 
 #define VISION_X_CM_PER_PIXEL          -0.100f
 #define VISION_Y_CM_PER_PIXEL          -0.050f
-#define CAMERA_TO_CLAW_X_OFFSET_CM      7.0f
+#define CAMERA_TO_CLAW_X_OFFSET_CM       7.0f //夹爪偏移量已修正，勿更改
 #define CAMERA_TO_CLAW_Y_OFFSET_CM      -2.0f
 
 #define VISION_APPROACH_Z_CM            2.0f
@@ -97,8 +103,12 @@ RecognitionHanleTypeDef color_result;
 
 /* USER CODE BEGIN PV */
 TrackStateTypeDef fsm_state = TRACK_STATE_DETECTION;
+uint8_t selected_color_id = COLOR_ID_RED;
 uint8_t stable_count;
 uint8_t lost_count;
+uint8_t key1_last_raw_state = GPIO_PIN_SET;
+uint8_t key1_stable_state = GPIO_PIN_SET;
+uint32_t key1_last_change_tick;
 float target_x;
 float target_y;
 float grab_x;
@@ -160,9 +170,88 @@ static void update_grab_target(void)
 	grab_y = clamp_float(target_y + CAMERA_TO_CLAW_Y_OFFSET_CM, VISION_TARGET_MIN_Y_CM, VISION_TARGET_MAX_Y_CM);
 }
 
+static void key1_gpio_init(void)
+{
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+	GPIO_InitStruct.Pin = KEY_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	HAL_GPIO_Init(KEY_GPIO_Port, &GPIO_InitStruct);
+
+	key1_last_raw_state = (uint8_t)HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin);
+	key1_stable_state = key1_last_raw_state;
+	key1_last_change_tick = HAL_GetTick();
+}
+
+static void update_selected_color_led(void)
+{
+	switch(selected_color_id)
+	{
+		case COLOR_ID_RED:
+			led_on(2);
+			break;
+
+		case COLOR_ID_GREEN:
+			led_flash(2, LED1_FLASH_ON_MS, LED1_FLASH_OFF_MS, 0);
+			break;
+
+		case COLOR_ID_BLUE:
+			led_off(2);
+			break;
+
+		default:
+			selected_color_id = COLOR_ID_RED;
+			led_on(2);
+			break;
+	}
+}
+
+static void select_next_color(void)
+{
+	switch(selected_color_id)
+	{
+		case COLOR_ID_RED:
+			selected_color_id = COLOR_ID_GREEN;
+			break;
+
+		case COLOR_ID_GREEN:
+			selected_color_id = COLOR_ID_BLUE;
+			break;
+
+		default:
+			selected_color_id = COLOR_ID_RED;
+			break;
+	}
+
+	update_selected_color_led();
+}
+
+static void scan_key1_color_select(void)
+{
+	uint8_t raw_state = (uint8_t)HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin);
+	uint32_t now = HAL_GetTick();
+
+	if(raw_state != key1_last_raw_state)
+	{
+		key1_last_raw_state = raw_state;
+		key1_last_change_tick = now;
+	}
+
+	if((now - key1_last_change_tick) >= KEY1_DEBOUNCE_MS && raw_state != key1_stable_state)
+	{
+		key1_stable_state = raw_state;
+		if(key1_stable_state == GPIO_PIN_RESET)
+		{
+			select_next_color();
+		}
+	}
+}
+
 static uint8_t read_target_color(void)
 {
-	return (wonder_mv_color_recognition(&color_result) && color_result.id == TRACK_COLOR_ID);
+	return (wonder_mv_color_recognition(&color_result) && color_result.id == selected_color_id);
 }
 
 static void handle_tracking_loss(void)
@@ -229,6 +318,8 @@ int main(void)
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
   led_init();
+  key1_gpio_init();
+  update_selected_color_led();
   robot_arm_init();
   buzzer_init();
   wonder_mv_init();
@@ -250,6 +341,7 @@ int main(void)
 	switch(fsm_state)
 	{
 	  case TRACK_STATE_DETECTION:
+		  scan_key1_color_select();
 		  if(read_target_color())
 		  {
 			  HAL_Delay(100);
