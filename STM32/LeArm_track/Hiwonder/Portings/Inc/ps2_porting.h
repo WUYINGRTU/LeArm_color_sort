@@ -11,8 +11,8 @@
 
 typedef enum
 {
-	PS2_SINGLE_SERVO_MODE = 1,
-	PS2_COORDINATE_MODE
+	PS2_AUTO_MODE = 1,
+	PS2_CHASSIS_MODE
 }PS2ModeStatusTypeDef;
 
 typedef enum
@@ -107,6 +107,7 @@ typedef struct
  *
  */
 void ps2_init(void);
+uint8_t ps2_is_chassis_mode(void);
 
 /**
  * @brief PS2句柄

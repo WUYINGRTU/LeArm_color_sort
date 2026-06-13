@@ -35,6 +35,7 @@
 #include "buzzer.h"
 #include "robot_arm.h"
 #include "wonder_mv.h"
+#include "ps2_porting.h"
 
 /* USER CODE END Includes */
 
@@ -323,6 +324,7 @@ int main(void)
   robot_arm_init();
   buzzer_init();
   wonder_mv_init();
+  ps2_init();
   reset_tracking_state();
   move_to_capture_pose(500);
   robot_arm_claw_set(CLAW_OPEN_ANGLE, 0);
@@ -337,7 +339,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-				
+	ps2_handler();
+	if(ps2_is_chassis_mode())
+	{
+		reset_tracking_state();
+		fsm_state = TRACK_STATE_DETECTION;
+		HAL_Delay(10);
+		continue;
+	}
+
 	switch(fsm_state)
 	{
 	  case TRACK_STATE_DETECTION:
