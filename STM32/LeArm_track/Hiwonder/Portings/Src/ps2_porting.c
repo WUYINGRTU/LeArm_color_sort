@@ -1,5 +1,6 @@
 #include "ps2_porting.h"
 #include "usart.h"
+#include "i2c.h"
 
 #ifdef MECANUM_CHASSIS
 #include "mecanum_chassis.h"
@@ -11,7 +12,14 @@ PS2HandleTypeDef ps2;
 static int8_t rot;
 static uint8_t speed;
 static uint16_t angle;
+static int8_t last_chassis_rot = 127;
+static uint8_t last_chassis_speed = 0xff;
+static uint16_t last_chassis_angle = 0xffff;
+static uint32_t last_chassis_send_tick;
 #endif
+
+#define PS2_CHASSIS_SEND_PERIOD_MS 50U
+#define PS2_I2C_RETRY_DELAY_MS      2U
 
 static void packet_uart_error_callblack(UART_HandleTypeDef *huart);
 static void packet_dma_receive_event_callback(UART_HandleTypeDef *huart, uint16_t length);
@@ -46,7 +54,16 @@ static void ps2_stop_chassis(void)
 	angle = 0;
 	speed = 0;
 	rot = 0;
-	mecanum_chassis_run(angle, speed, rot, 0);
+	if(!mecanum_chassis_run(angle, speed, rot, 0))
+	{
+		i2c1_recover();
+		HAL_Delay(PS2_I2C_RETRY_DELAY_MS);
+		mecanum_chassis_run(angle, speed, rot, 0);
+	}
+	last_chassis_angle = angle;
+	last_chassis_speed = speed;
+	last_chassis_rot = rot;
+	last_chassis_send_tick = HAL_GetTick();
 #endif
 }
 
@@ -113,6 +130,11 @@ static void ps2_decode_direction(PS2HandleTypeDef* self)
 
 static void ps2_run_chassis(PS2HandleTypeDef* self)
 {
+#ifdef MECANUM_CHASSIS
+	uint32_t now;
+	uint8_t need_send;
+#endif
+
 	if(self->mode != PS2_CHASSIS_MODE)
 	{
 		return;
@@ -178,7 +200,34 @@ static void ps2_run_chassis(PS2HandleTypeDef* self)
 		rot = 80;
 	}
 
-	mecanum_chassis_run(angle, speed, rot, 0);
+	now = HAL_GetTick();
+	need_send = angle != last_chassis_angle ||
+	            speed != last_chassis_speed ||
+	            rot != last_chassis_rot ||
+	            (now - last_chassis_send_tick) >= PS2_CHASSIS_SEND_PERIOD_MS;
+
+	if(!need_send)
+	{
+		return;
+	}
+
+	if(!mecanum_chassis_run(angle, speed, rot, 0))
+	{
+		i2c1_recover();
+		HAL_Delay(PS2_I2C_RETRY_DELAY_MS);
+		if(!mecanum_chassis_run(angle, speed, rot, 0))
+		{
+			angle = 0;
+			speed = 0;
+			rot = 0;
+			mecanum_chassis_run(angle, speed, rot, 0);
+		}
+	}
+
+	last_chassis_angle = angle;
+	last_chassis_speed = speed;
+	last_chassis_rot = rot;
+	last_chassis_send_tick = now;
 #endif
 }
 

@@ -16,20 +16,44 @@
  */
  
 WonderMVHandleTypeDef wonder_mv;
+
+#define WONDERMV_I2C_READY_TIMEOUT_MS  20U
+#define WONDERMV_I2C_RETRY_DELAY_MS     2U
 	
 static uint8_t write_data(WonderMVHandleTypeDef* self, uint8_t* pdata, uint16_t size)
 {
+	if(!i2c1_wait_ready(WONDERMV_I2C_READY_TIMEOUT_MS))
+	{
+		i2c1_recover();
+	}
+
 	self->transmit_status = (uint8_t)HAL_I2C_Master_Transmit(&hi2c1, self->dev_addr << 1, pdata, size, 0xfff);
 	return self->transmit_status;
 }
 
 static uint8_t read_data(WonderMVHandleTypeDef* self, uint8_t* pdata, uint16_t size)
-{	
+{
+	if(!i2c1_wait_ready(WONDERMV_I2C_READY_TIMEOUT_MS))
+	{
+		i2c1_recover();
+	}
+
 	/* 使用HAL_I2C_Master_Receive_DMA这个函数需要把i2c的事件中断勾上 */
 	self->receive_status = (uint8_t)HAL_I2C_Master_Receive_DMA(&hi2c1, self->dev_addr << 1, pdata, size);
 	return self->receive_status;	
 }
 
+
+static bool wait_receive_complete(void)
+{
+	if(!i2c1_wait_ready(WONDERMV_I2C_READY_TIMEOUT_MS))
+	{
+		i2c1_recover();
+		return false;
+	}
+
+	return true;
+}
 
 static bool write_to_device(WonderMVHandleTypeDef* self, uint8_t reg, uint8_t* pdata, uint16_t size)
 {
@@ -44,7 +68,9 @@ static bool write_to_device(WonderMVHandleTypeDef* self, uint8_t reg, uint8_t* p
 	
 	if(write_data(self, trans_data, sizeof(trans_data)) != 0)
 	{
-		return false;
+		HAL_Delay(WONDERMV_I2C_RETRY_DELAY_MS);
+		i2c1_recover();
+		return write_data(self, trans_data, sizeof(trans_data)) == 0;
 	}
 	
 	return true;
@@ -56,12 +82,23 @@ static bool receive_from_device(WonderMVHandleTypeDef* self, uint8_t reg, uint8_
 	
 	if(write_data(self, &set_reg, 1) != 0)
 	{
-		return false;
+		HAL_Delay(WONDERMV_I2C_RETRY_DELAY_MS);
+		i2c1_recover();
+		if(write_data(self, &set_reg, 1) != 0)
+		{
+			return false;
+		}
 	}
 	
 	if(read_data(self, pdata, size) != 0)
 	{
-		return false;
+		HAL_Delay(WONDERMV_I2C_RETRY_DELAY_MS);
+		i2c1_recover();
+		if(write_data(self, &set_reg, 1) != 0)
+		{
+			return false;
+		}
+		return read_data(self, pdata, size) == 0;
 	}
 	
 	return true;
@@ -79,7 +116,10 @@ bool wonder_mv_color_recognition(RecognitionHanleTypeDef* color)
 {
 	if(receive_from_device(&wonder_mv, COLOR_REG, wonder_mv.results, sizeof(wonder_mv.results)))
 	{
-		while(HAL_I2C_STATE_READY != HAL_I2C_GetState(&hi2c1));
+		if(!wait_receive_complete())
+		{
+			return false;
+		}
 		color->id = wonder_mv.results[0];
 		color->position.x = BYTE_TO_HW(wonder_mv.results[2], wonder_mv.results[1]);
 		color->position.y = BYTE_TO_HW(wonder_mv.results[4], wonder_mv.results[3]);
@@ -96,7 +136,10 @@ bool wonder_mv_face_detection(RecognitionHanleTypeDef* face)
 {
 	if(receive_from_device(&wonder_mv, FACE_REG, wonder_mv.results, sizeof(wonder_mv.results)))
 	{
-		while(HAL_I2C_STATE_READY != HAL_I2C_GetState(&hi2c1));
+		if(!wait_receive_complete())
+		{
+			return false;
+		}
 		face->id = wonder_mv.results[0];
 		face->position.x = BYTE_TO_HW(wonder_mv.results[2], wonder_mv.results[1]);
 		face->position.y = BYTE_TO_HW(wonder_mv.results[4], wonder_mv.results[3]);
@@ -112,7 +155,10 @@ bool wonder_mv_tag_detection(RecognitionHanleTypeDef* tag)
 {
 	if(receive_from_device(&wonder_mv, TAG_REG, wonder_mv.results, sizeof(wonder_mv.results)))
 	{
-		while(HAL_I2C_STATE_READY != HAL_I2C_GetState(&hi2c1));
+		if(!wait_receive_complete())
+		{
+			return false;
+		}
 		tag->id = wonder_mv.results[0];
 		tag->position.x = BYTE_TO_HW(wonder_mv.results[2], wonder_mv.results[1]);
 		tag->position.y = BYTE_TO_HW(wonder_mv.results[4], wonder_mv.results[3]);
@@ -127,7 +173,10 @@ bool wonder_mv_object_detection(RecognitionHanleTypeDef* obj)
 {
 	if(receive_from_device(&wonder_mv, OBJECT_REG, wonder_mv.results, sizeof(wonder_mv.results)))
 	{
-		while(HAL_I2C_STATE_READY != HAL_I2C_GetState(&hi2c1));
+		if(!wait_receive_complete())
+		{
+			return false;
+		}
 		obj->id = wonder_mv.results[0];
 		obj->position.x = BYTE_TO_HW(wonder_mv.results[2], wonder_mv.results[1]);
 		obj->position.y = BYTE_TO_HW(wonder_mv.results[4], wonder_mv.results[3]);

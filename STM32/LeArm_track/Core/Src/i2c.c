@@ -137,5 +137,32 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* i2cHandle)
 }
 
 /* USER CODE BEGIN 1 */
+uint8_t i2c1_wait_ready(uint32_t timeout_ms)
+{
+  uint32_t start = HAL_GetTick();
+
+  while(HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY)
+  {
+    if((HAL_GetTick() - start) >= timeout_ms)
+    {
+      return 0;
+    }
+  }
+
+  return HAL_I2C_GetError(&hi2c1) == HAL_I2C_ERROR_NONE;
+}
+
+uint8_t i2c1_is_healthy(void)
+{
+  return HAL_I2C_GetState(&hi2c1) == HAL_I2C_STATE_READY &&
+         HAL_I2C_GetError(&hi2c1) == HAL_I2C_ERROR_NONE;
+}
+
+void i2c1_recover(void)
+{
+  HAL_I2C_DeInit(&hi2c1);
+  HAL_Delay(2);
+  MX_I2C1_Init();
+}
 
 /* USER CODE END 1 */

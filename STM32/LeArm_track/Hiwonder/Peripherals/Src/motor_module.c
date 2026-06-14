@@ -5,14 +5,27 @@
 
 MotorModuleHandleTypeDef motor_module;
 
+#define MOTOR_I2C_READY_TIMEOUT_MS  10U
+#define MOTOR_I2C_RETRY_DELAY_MS     2U
+
 static uint8_t write_data(MotorModuleHandleTypeDef* self, uint8_t* pdata, uint16_t size)
 {
+	if(!i2c1_wait_ready(MOTOR_I2C_READY_TIMEOUT_MS))
+	{
+		i2c1_recover();
+	}
+
 	self->transmit_status = (uint8_t)HAL_I2C_Master_Transmit(&hi2c1, self->dev_addr << 1, pdata, size, 0xfff);
 	return self->transmit_status;
 }
 
 static uint8_t read_data(MotorModuleHandleTypeDef* self, uint8_t* pdata, uint16_t size)
-{	
+{
+	if(!i2c1_wait_ready(MOTOR_I2C_READY_TIMEOUT_MS))
+	{
+		i2c1_recover();
+	}
+
 	/* 使用HAL_I2C_Master_Receive_DMA这个函数需要把i2c的事件中断勾上 */
 	self->receive_status = (uint8_t)HAL_I2C_Master_Receive_DMA(&hi2c1, self->dev_addr << 1, pdata, size);
 	return self->receive_status;	
@@ -32,7 +45,9 @@ static bool write_to_device(MotorModuleHandleTypeDef* self, uint8_t reg, uint8_t
 	
 	if(write_data(self, trans_data, sizeof(trans_data)) != 0)
 	{
-		return false;
+		HAL_Delay(MOTOR_I2C_RETRY_DELAY_MS);
+		i2c1_recover();
+		return write_data(self, trans_data, sizeof(trans_data)) == 0;
 	}
 	
 	return true;
@@ -44,12 +59,19 @@ static bool receive_from_device(MotorModuleHandleTypeDef* self, uint8_t reg, uin
 	
 	if(write_data(self, &set_reg, 1) != 0)
 	{
-		return false;
+		HAL_Delay(MOTOR_I2C_RETRY_DELAY_MS);
+		i2c1_recover();
+		if(write_data(self, &set_reg, 1) != 0)
+		{
+			return false;
+		}
 	}
 	
 	if(read_data(self, pdata, size) != 0)
 	{
-		return false;
+		HAL_Delay(MOTOR_I2C_RETRY_DELAY_MS);
+		i2c1_recover();
+		return read_data(self, pdata, size) == 0;
 	}
 	
 	return true;
@@ -70,7 +92,11 @@ bool get_motor_module_voltage(uint16_t* bat)
 	uint8_t val[2] = {0};
 	if(receive_from_device(&motor_module, ADC_BAT_REG, val, sizeof(val)))
 	{
-		while(HAL_I2C_STATE_READY != HAL_I2C_GetState(&hi2c1));
+		if(!i2c1_wait_ready(MOTOR_I2C_READY_TIMEOUT_MS))
+		{
+			i2c1_recover();
+			return false;
+		}
 		*bat = BYTE_TO_HW(val[1], val[0]);
 		return true;
 	}
@@ -82,7 +108,11 @@ bool get_motor_encoder(int32_t* encoder_val)
 	int32_t val[4] = {0};
 	if(receive_from_device(&motor_module, MOTOR_GET_ENCODER_REG, (uint8_t*)val, sizeof(val)))
 	{
-		while(HAL_I2C_STATE_READY != HAL_I2C_GetState(&hi2c1));
+		if(!i2c1_wait_ready(MOTOR_I2C_READY_TIMEOUT_MS))
+		{
+			i2c1_recover();
+			return false;
+		}
 		for (uint8_t i = 0; i < 4; i++)
 		{
 			encoder_val[i] = val[i];

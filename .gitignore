@@ -17,6 +17,8 @@ debug_*.jpg
 *.htm
 *.dep
 *.iex
+*.__i
+*._ac
 *.uvguix.*
 
 # Large CMSIS algorithm/example/prebuilt packages not referenced by this project

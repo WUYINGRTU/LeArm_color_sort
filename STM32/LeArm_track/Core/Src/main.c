@@ -73,7 +73,7 @@ RecognitionHanleTypeDef color_result;
 #define VISION_X_CM_PER_PIXEL          -0.100f
 #define VISION_Y_CM_PER_PIXEL          -0.050f
 #define CAMERA_TO_CLAW_X_OFFSET_CM       7.0f //夹爪偏移量已修正，勿更改
-#define CAMERA_TO_CLAW_Y_OFFSET_CM      -2.0f
+#define CAMERA_TO_CLAW_Y_OFFSET_CM       0.0f
 
 #define VISION_APPROACH_Z_CM            2.0f
 #define VISION_GRAB_Z_CM              -14.0f
@@ -107,6 +107,7 @@ TrackStateTypeDef fsm_state = TRACK_STATE_DETECTION;
 uint8_t selected_color_id = COLOR_ID_RED;
 uint8_t stable_count;
 uint8_t lost_count;
+uint8_t last_chassis_mode;
 uint8_t key1_last_raw_state = GPIO_PIN_SET;
 uint8_t key1_stable_state = GPIO_PIN_SET;
 uint32_t key1_last_change_tick;
@@ -252,6 +253,11 @@ static void scan_key1_color_select(void)
 
 static uint8_t read_target_color(void)
 {
+	if(ps2_is_chassis_mode())
+	{
+		return 0;
+	}
+
 	return (wonder_mv_color_recognition(&color_result) && color_result.id == selected_color_id);
 }
 
@@ -339,13 +345,30 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	uint8_t chassis_mode;
+
 	ps2_handler();
-	if(ps2_is_chassis_mode())
+	chassis_mode = ps2_is_chassis_mode();
+	if(chassis_mode)
 	{
-		reset_tracking_state();
-		fsm_state = TRACK_STATE_DETECTION;
+		if(!last_chassis_mode)
+		{
+			i2c1_recover();
+			reset_tracking_state();
+			fsm_state = TRACK_STATE_DETECTION;
+			last_chassis_mode = 1;
+		}
 		HAL_Delay(10);
 		continue;
+	}
+
+	if(last_chassis_mode)
+	{
+		i2c1_recover();
+		HAL_Delay(100);
+		reset_tracking_state();
+		fsm_state = TRACK_STATE_DETECTION;
+		last_chassis_mode = 0;
 	}
 
 	switch(fsm_state)

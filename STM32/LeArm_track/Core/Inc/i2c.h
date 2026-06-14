@@ -41,6 +41,9 @@ extern I2C_HandleTypeDef hi2c1;
 void MX_I2C1_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+uint8_t i2c1_wait_ready(uint32_t timeout_ms);
+uint8_t i2c1_is_healthy(void);
+void i2c1_recover(void);
 
 /* USER CODE END Prototypes */
 

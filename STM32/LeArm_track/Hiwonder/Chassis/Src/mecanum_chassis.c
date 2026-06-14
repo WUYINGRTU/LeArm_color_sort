@@ -25,7 +25,7 @@ void mecanum_chassis_init()
 }
 
 	int8_t motor_speed[4];
-void mecanum_chassis_run(uint16_t angle, uint8_t speed, int8_t rot, bool drift)
+bool mecanum_chassis_run(uint16_t angle, uint8_t speed, int8_t rot, bool drift)
 {
 
 	float speed_factor = 1;
@@ -58,5 +58,5 @@ void mecanum_chassis_run(uint16_t angle, uint8_t speed, int8_t rot, bool drift)
 		motor_speed[3] = (speed * sin(rad) - speed * cos(rad)) * speed_factor - rot * speed_factor;			/* 俯视 左后轮 - M4口*/
 	}
 	
-	set_motor_speed(motor_speed);
+	return set_motor_speed(motor_speed);
 }
