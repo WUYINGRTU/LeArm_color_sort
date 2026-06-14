@@ -126,42 +126,42 @@ static void ps2_run_chassis(PS2HandleTypeDef* self)
 	}
 	else if(self->keyvalue.left_joystick_x == 127 && self->keyvalue.left_joystick_y < 127)
 	{
-		angle = 0;
+		angle = 180;
 		speed = 80;
 	}
 	else if(self->keyvalue.left_joystick_x == 127 && self->keyvalue.left_joystick_y > 127)
 	{
-		angle = 180;
+		angle = 0;
 		speed = 80;
 	}
 	else if(self->keyvalue.left_joystick_x < 127 && self->keyvalue.left_joystick_y == 127)
 	{
-		angle = 90;
+		angle = 270;
 		speed = 80;
 	}
 	else if(self->keyvalue.left_joystick_x > 127 && self->keyvalue.left_joystick_y == 127)
 	{
-		angle = 270;
+		angle = 90;
 		speed = 80;
 	}
 	else if(self->keyvalue.left_joystick_x < 127 && self->keyvalue.left_joystick_y < 127)
 	{
-		angle = 45;
+		angle = 225;
 		speed = 80;
 	}
 	else if(self->keyvalue.left_joystick_x < 127 && self->keyvalue.left_joystick_y > 127)
 	{
-		angle = 135;
+		angle = 315;
 		speed = 80;
 	}
 	else if(self->keyvalue.left_joystick_x > 127 && self->keyvalue.left_joystick_y > 127)
 	{
-		angle = 225;
+		angle = 45;
 		speed = 80;
 	}
 	else if(self->keyvalue.left_joystick_x > 127 && self->keyvalue.left_joystick_y < 127)
 	{
-		angle = 315;
+		angle = 135;
 		speed = 80;
 	}
 
@@ -171,11 +171,11 @@ static void ps2_run_chassis(PS2HandleTypeDef* self)
 	}
 	else if(self->keyvalue.right_joystick_x < 127)
 	{
-		rot = 80;
+		rot = -80;
 	}
 	else if(self->keyvalue.right_joystick_x > 127)
 	{
-		rot = -80;
+		rot = 80;
 	}
 
 	mecanum_chassis_run(angle, speed, rot, 0);
