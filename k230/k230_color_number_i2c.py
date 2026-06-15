@@ -29,8 +29,9 @@ K230_NOTIFY_PIN = 14
 COLOR_LEGACY_REG = 0x00
 RESULT_ITEM_SIZE = 9
 LEGACY_COLOR_OFFSET = 0
-LEGACY_NUMBER_OFFSET = 9
-LEGACY_PACKET_SIZE = RESULT_ITEM_SIZE * 2
+LEGACY_NUMBER_BASE_OFFSET = 9
+LEGACY_NUMBER_COUNT = 5
+LEGACY_PACKET_SIZE = RESULT_ITEM_SIZE * (1 + LEGACY_NUMBER_COUNT)
 
 COLOR_REGS = {
     1: 0x10,  # RED
@@ -115,8 +116,11 @@ def set_legacy_color_data(target_id, cx, cy, w, h):
     set_result_slot(result_data[COLOR_LEGACY_REG], LEGACY_COLOR_OFFSET, target_id, cx, cy, w, h)
 
 
-def set_legacy_number_data(target_id, cx, cy, w, h):
-    set_result_slot(result_data[COLOR_LEGACY_REG], LEGACY_NUMBER_OFFSET, target_id, cx, cy, w, h)
+def set_legacy_number_data(number_id, cx, cy, w, h):
+    if number_id < 1 or number_id > LEGACY_NUMBER_COUNT:
+        return
+    offset = LEGACY_NUMBER_BASE_OFFSET + (number_id - 1) * RESULT_ITEM_SIZE
+    set_result_slot(result_data[COLOR_LEGACY_REG], offset, number_id, cx, cy, w, h)
 
 
 def clear_all_results():
@@ -291,7 +295,6 @@ def update_color_results(color_img, osd_img):
 
 def update_number_results(det_boxes, labels, color_four, osd_img):
     best_numbers = {}
-    best_legacy_number = None
 
     if not det_boxes:
         return best_numbers
@@ -314,16 +317,10 @@ def update_number_results(det_boxes, labels, color_four, osd_img):
         if number_id not in best_numbers or score > best_numbers[number_id][0]:
             best_numbers[number_id] = (score, cx, cy, w, h)
 
-        if best_legacy_number is None or score > best_legacy_number[0]:
-            best_legacy_number = (score, number_id, cx, cy, w, h)
-
-    if best_legacy_number is not None:
-        _, number_id, cx, cy, w, h = best_legacy_number
-        set_legacy_number_data(number_id, cx, cy, w, h)
-
     for number_id, reg in NUMBER_REGS.items():
         if number_id in best_numbers:
             _, cx, cy, w, h = best_numbers[number_id]
+            set_legacy_number_data(number_id, cx, cy, w, h)
             set_result_data(reg, number_id, cx, cy, w, h)
 
     return best_numbers

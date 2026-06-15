@@ -205,6 +205,7 @@ void SysTick_Handler(void)
 	sys_count++;
 	if(sys_count % 20 == 0)
 	{
+		adc_sample_handler();
 		leds_handler();
 		buzzer_handler();
 #if (SERVO_TYPE == 1)

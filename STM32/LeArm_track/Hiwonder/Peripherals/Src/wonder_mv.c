@@ -180,7 +180,7 @@ bool wonder_mv_color_recognition(RecognitionHanleTypeDef* color)
 	return wonder_mv_read_recognition(COLOR_REG, color);
 }
 
-bool wonder_mv_color_number_recognition(RecognitionHanleTypeDef* color, RecognitionHanleTypeDef* number)
+bool wonder_mv_color_number_recognition(RecognitionHanleTypeDef* color, RecognitionHanleTypeDef* numbers)
 {
 	if(receive_from_device(&wonder_mv, COLOR_REG, wonder_mv.color_number_results, sizeof(wonder_mv.color_number_results)))
 	{
@@ -190,7 +190,13 @@ bool wonder_mv_color_number_recognition(RecognitionHanleTypeDef* color, Recognit
 		}
 
 		decode_recognition_result_from_buffer(&wonder_mv.color_number_results[0], color);
-		decode_recognition_result_from_buffer(&wonder_mv.color_number_results[RECOGNITION_RESULT_SIZE], number);
+		for(uint8_t i = 0; i < NUMBER_RESULT_COUNT; i++)
+		{
+			decode_recognition_result_from_buffer(
+				&wonder_mv.color_number_results[RECOGNITION_RESULT_SIZE * (1U + i)],
+				&numbers[i]
+			);
+		}
 		return true;
 	}
 

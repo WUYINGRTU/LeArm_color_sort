@@ -36,6 +36,7 @@
 #include "robot_arm.h"
 #include "wonder_mv.h"
 #include "ps2_porting.h"
+#include "adc_sample.h"
 
 /* USER CODE END Includes */
 
@@ -60,7 +61,7 @@ typedef enum
 } TargetKindTypeDef;
 
 RecognitionHanleTypeDef color_result;
-RecognitionHanleTypeDef number_result;
+RecognitionHanleTypeDef number_results[NUMBER_RESULT_COUNT];
 RecognitionHanleTypeDef vision_result;
 /* USER CODE END PTD */
 
@@ -70,9 +71,14 @@ RecognitionHanleTypeDef vision_result;
 #define COLOR_ID_GREEN                  2U
 #define COLOR_ID_BLUE                   3U
 
-#define KEY1_DEBOUNCE_MS               50U
+#define KEY_DEBOUNCE_MS                50U
 #define LED1_FLASH_ON_MS              300U
 #define LED1_FLASH_OFF_MS             300U
+#define NUMBER_LED_FLASH_ON_MS        300U
+#define NUMBER_LED_FLASH_OFF_MS       300U
+#define NUMBER_BUZZER_ON_MS           100U
+#define NUMBER_BUZZER_OFF_MS          100U
+#define NUMBER_BUZZER_TIMES             2U
 
 #define VISION_CAPTURE_X_CM            15.0f
 #define VISION_CAPTURE_Y_CM             0.0f
@@ -114,12 +120,13 @@ RecognitionHanleTypeDef vision_result;
 TrackStateTypeDef fsm_state = TRACK_STATE_DETECTION;
 TargetKindTypeDef current_target = TARGET_COLOR;
 uint8_t selected_color_id = COLOR_ID_RED;
+uint8_t selected_number_id = 1U;
 uint8_t stable_count;
 uint8_t lost_count;
 uint8_t last_chassis_mode;
-uint8_t key1_last_raw_state = GPIO_PIN_SET;
-uint8_t key1_stable_state = GPIO_PIN_SET;
-uint32_t key1_last_change_tick;
+uint8_t key_last_raw_state;
+uint8_t key_stable_state;
+uint32_t key_last_change_tick;
 float target_x;
 float target_y;
 float grab_x;
@@ -167,7 +174,10 @@ static void clear_recognition_result(RecognitionHanleTypeDef* result)
 static void reset_tracking_state(void)
 {
 	clear_recognition_result(&color_result);
-	clear_recognition_result(&number_result);
+	for(uint8_t i = 0; i < NUMBER_RESULT_COUNT; i++)
+	{
+		clear_recognition_result(&number_results[i]);
+	}
 	clear_recognition_result(&vision_result);
 	stable_count = 0;
 	lost_count = 0;
@@ -194,21 +204,6 @@ static void update_grab_target(void)
 	grab_y = clamp_float(target_y + CAMERA_TO_CLAW_Y_OFFSET_CM, VISION_TARGET_MIN_Y_CM, VISION_TARGET_MAX_Y_CM);
 }
 
-static void key1_gpio_init(void)
-{
-	GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-	__HAL_RCC_GPIOC_CLK_ENABLE();
-	GPIO_InitStruct.Pin = KEY_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	HAL_GPIO_Init(KEY_GPIO_Port, &GPIO_InitStruct);
-
-	key1_last_raw_state = (uint8_t)HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin);
-	key1_stable_state = key1_last_raw_state;
-	key1_last_change_tick = HAL_GetTick();
-}
-
 static void update_selected_color_led(void)
 {
 	switch(selected_color_id)
@@ -228,6 +223,61 @@ static void update_selected_color_led(void)
 		default:
 			selected_color_id = COLOR_ID_RED;
 			led_on(2);
+			break;
+	}
+}
+
+static void update_selected_number_indicator(uint8_t play_buzzer)
+{
+	switch(selected_number_id)
+	{
+		case 1:
+			led_on(1);
+			if(play_buzzer)
+			{
+				buzzer_off();
+			}
+			break;
+
+		case 2:
+			led_flash(1, NUMBER_LED_FLASH_ON_MS, NUMBER_LED_FLASH_OFF_MS, 0);
+			if(play_buzzer)
+			{
+				buzzer_off();
+			}
+			break;
+
+		case 3:
+			led_off(1);
+			if(play_buzzer)
+			{
+				buzzer_off();
+			}
+			break;
+
+		case 4:
+			led_on(1);
+			if(play_buzzer)
+			{
+				buzzer_toggle(NUMBER_BUZZER_ON_MS, NUMBER_BUZZER_OFF_MS, NUMBER_BUZZER_TIMES);
+			}
+			break;
+
+		case 5:
+			led_flash(1, NUMBER_LED_FLASH_ON_MS, NUMBER_LED_FLASH_OFF_MS, 0);
+			if(play_buzzer)
+			{
+				buzzer_toggle(NUMBER_BUZZER_ON_MS, NUMBER_BUZZER_OFF_MS, NUMBER_BUZZER_TIMES);
+			}
+			break;
+
+		default:
+			selected_number_id = 1U;
+			led_on(1);
+			if(play_buzzer)
+			{
+				buzzer_off();
+			}
 			break;
 	}
 }
@@ -252,23 +302,38 @@ static void select_next_color(void)
 	update_selected_color_led();
 }
 
-static void scan_key1_color_select(void)
+static void select_next_number(void)
 {
-	uint8_t raw_state = (uint8_t)HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin);
-	uint32_t now = HAL_GetTick();
-
-	if(raw_state != key1_last_raw_state)
+	selected_number_id++;
+	if(selected_number_id > NUMBER_RESULT_COUNT)
 	{
-		key1_last_raw_state = raw_state;
-		key1_last_change_tick = now;
+		selected_number_id = 1U;
 	}
 
-	if((now - key1_last_change_tick) >= KEY1_DEBOUNCE_MS && raw_state != key1_stable_state)
+	update_selected_number_indicator(1);
+}
+
+static void scan_adc_key_select(void)
+{
+	uint8_t raw_state = get_button_state();
+	uint32_t now = HAL_GetTick();
+
+	if(raw_state != key_last_raw_state)
 	{
-		key1_stable_state = raw_state;
-		if(key1_stable_state == GPIO_PIN_RESET)
+		key_last_raw_state = raw_state;
+		key_last_change_tick = now;
+	}
+
+	if((now - key_last_change_tick) >= KEY_DEBOUNCE_MS && raw_state != key_stable_state)
+	{
+		key_stable_state = raw_state;
+		if(key_stable_state == 1U)
 		{
 			select_next_color();
+		}
+		else if(key_stable_state == 2U)
+		{
+			select_next_number();
 		}
 	}
 }
@@ -285,7 +350,7 @@ static uint8_t read_current_target(void)
 		return 0;
 	}
 
-	if(!wonder_mv_color_number_recognition(&color_result, &number_result))
+	if(!wonder_mv_color_number_recognition(&color_result, number_results))
 	{
 		return 0;
 	}
@@ -301,9 +366,14 @@ static uint8_t read_current_target(void)
 		return 1;
 	}
 
-	if(is_valid_number_id(number_result.id))
+	if(!is_valid_number_id(selected_number_id))
 	{
-		vision_result = number_result;
+		selected_number_id = 1U;
+	}
+
+	if(number_results[selected_number_id - 1U].id == selected_number_id)
+	{
+		vision_result = number_results[selected_number_id - 1U];
 		return 1;
 	}
 
@@ -387,9 +457,14 @@ int main(void)
   /* Initialize interrupts */
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
+  adc_sample_init();
+  adc_sample_handler();
   led_init();
-  key1_gpio_init();
+  key_last_raw_state = get_button_state();
+  key_stable_state = key_last_raw_state;
+  key_last_change_tick = HAL_GetTick();
   update_selected_color_led();
+  update_selected_number_indicator(0);
   robot_arm_init();
   buzzer_init();
   wonder_mv_init();
@@ -417,7 +492,7 @@ int main(void)
 		if(!last_chassis_mode)
 		{
 			i2c1_recover();
-			reset_tracking_sequence();
+			reset_tracking_state();
 			fsm_state = TRACK_STATE_DETECTION;
 			last_chassis_mode = 1;
 		}
@@ -429,7 +504,7 @@ int main(void)
 	{
 		i2c1_recover();
 		HAL_Delay(100);
-		reset_tracking_sequence();
+		reset_tracking_state();
 		fsm_state = TRACK_STATE_DETECTION;
 		last_chassis_mode = 0;
 	}
@@ -437,10 +512,7 @@ int main(void)
 	switch(fsm_state)
 	{
 	  case TRACK_STATE_DETECTION:
-		  if(current_target == TARGET_COLOR)
-		  {
-			  scan_key1_color_select();
-		  }
+		  scan_adc_key_select();
 		  if(read_current_target())
 		  {
 			  HAL_Delay(100);
