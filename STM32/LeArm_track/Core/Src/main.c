@@ -53,7 +53,15 @@ typedef enum
 	TRACK_STATE_RETURN
 } TrackStateTypeDef;
 
+typedef enum
+{
+	TARGET_COLOR = 0,
+	TARGET_NUMBER
+} TargetKindTypeDef;
+
 RecognitionHanleTypeDef color_result;
+RecognitionHanleTypeDef number_result;
+RecognitionHanleTypeDef vision_result;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -104,6 +112,7 @@ RecognitionHanleTypeDef color_result;
 
 /* USER CODE BEGIN PV */
 TrackStateTypeDef fsm_state = TRACK_STATE_DETECTION;
+TargetKindTypeDef current_target = TARGET_COLOR;
 uint8_t selected_color_id = COLOR_ID_RED;
 uint8_t stable_count;
 uint8_t lost_count;
@@ -146,19 +155,32 @@ static float clamp_float(float value, float min_value, float max_value)
 	return value;
 }
 
+static void clear_recognition_result(RecognitionHanleTypeDef* result)
+{
+	result->id = 0;
+	result->position.x = 0;
+	result->position.y = 0;
+	result->position.w = 0;
+	result->position.h = 0;
+}
+
 static void reset_tracking_state(void)
 {
-	color_result.id = 0;
-	color_result.position.x = 0;
-	color_result.position.y = 0;
-	color_result.position.w = 0;
-	color_result.position.h = 0;
+	clear_recognition_result(&color_result);
+	clear_recognition_result(&number_result);
+	clear_recognition_result(&vision_result);
 	stable_count = 0;
 	lost_count = 0;
 	target_x = VISION_CAPTURE_X_CM;
 	target_y = VISION_CAPTURE_Y_CM;
 	grab_x = VISION_CAPTURE_X_CM;
 	grab_y = VISION_CAPTURE_Y_CM;
+}
+
+static void reset_tracking_sequence(void)
+{
+	current_target = TARGET_COLOR;
+	reset_tracking_state();
 }
 
 static void move_to_capture_pose(uint32_t time_ms)
@@ -251,14 +273,55 @@ static void scan_key1_color_select(void)
 	}
 }
 
-static uint8_t read_target_color(void)
+static uint8_t is_valid_number_id(uint8_t id)
+{
+	return id >= 1U && id <= 5U;
+}
+
+static uint8_t read_current_target(void)
 {
 	if(ps2_is_chassis_mode())
 	{
 		return 0;
 	}
 
-	return (wonder_mv_color_recognition(&color_result) && color_result.id == selected_color_id);
+	if(!wonder_mv_color_number_recognition(&color_result, &number_result))
+	{
+		return 0;
+	}
+
+	if(current_target == TARGET_COLOR)
+	{
+		if(color_result.id != selected_color_id)
+		{
+			return 0;
+		}
+
+		vision_result = color_result;
+		return 1;
+	}
+
+	if(is_valid_number_id(number_result.id))
+	{
+		vision_result = number_result;
+		return 1;
+	}
+
+	return 0;
+}
+
+static void advance_to_next_target(void)
+{
+	if(current_target == TARGET_COLOR)
+	{
+		current_target = TARGET_NUMBER;
+	}
+	else
+	{
+		current_target = TARGET_COLOR;
+	}
+
+	reset_tracking_state();
 }
 
 static void handle_tracking_loss(void)
@@ -331,7 +394,7 @@ int main(void)
   buzzer_init();
   wonder_mv_init();
   ps2_init();
-  reset_tracking_state();
+  reset_tracking_sequence();
   move_to_capture_pose(500);
   robot_arm_claw_set(CLAW_OPEN_ANGLE, 0);
   HAL_Delay(1000);
@@ -354,7 +417,7 @@ int main(void)
 		if(!last_chassis_mode)
 		{
 			i2c1_recover();
-			reset_tracking_state();
+			reset_tracking_sequence();
 			fsm_state = TRACK_STATE_DETECTION;
 			last_chassis_mode = 1;
 		}
@@ -366,7 +429,7 @@ int main(void)
 	{
 		i2c1_recover();
 		HAL_Delay(100);
-		reset_tracking_state();
+		reset_tracking_sequence();
 		fsm_state = TRACK_STATE_DETECTION;
 		last_chassis_mode = 0;
 	}
@@ -374,11 +437,14 @@ int main(void)
 	switch(fsm_state)
 	{
 	  case TRACK_STATE_DETECTION:
-		  scan_key1_color_select();
-		  if(read_target_color())
+		  if(current_target == TARGET_COLOR)
+		  {
+			  scan_key1_color_select();
+		  }
+		  if(read_current_target())
 		  {
 			  HAL_Delay(100);
-			  if(read_target_color())
+			  if(read_current_target())
 			  {
 				  target_x = VISION_CAPTURE_X_CM;
 				  target_y = VISION_CAPTURE_Y_CM;
@@ -395,14 +461,14 @@ int main(void)
 		  float pixel_dx;
 		  float step_y;
 
-		  if(!read_target_color())
+		  if(!read_current_target())
 		  {
 			  handle_tracking_loss();
 			  break;
 		  }
 
 		  lost_count = 0;
-		  pixel_dx = (float)color_result.position.x - TRACK_CENTER_X;
+		  pixel_dx = (float)vision_result.position.x - TRACK_CENTER_X;
 
 		  if(pixel_dx >= -TRACK_DEADBAND_X_PX && pixel_dx <= TRACK_DEADBAND_X_PX)
 		  {
@@ -430,14 +496,14 @@ int main(void)
 		  float pixel_dy;
 		  float step_x;
 
-		  if(!read_target_color())
+		  if(!read_current_target())
 		  {
 			  handle_tracking_loss();
 			  break;
 		  }
 
 		  lost_count = 0;
-		  pixel_dy = (float)color_result.position.y - TRACK_CENTER_Y;
+		  pixel_dy = (float)vision_result.position.y - TRACK_CENTER_Y;
 
 		  if(pixel_dy >= -TRACK_DEADBAND_Y_PX && pixel_dy <= TRACK_DEADBAND_Y_PX)
 		  {
@@ -489,12 +555,12 @@ int main(void)
 		  HAL_Delay(500);
 		  move_to_capture_pose(500);
 		  HAL_Delay(600);
-		  reset_tracking_state();
+		  advance_to_next_target();
 		  fsm_state = TRACK_STATE_DETECTION;
 		  break;
 
 	  default:
-		  reset_tracking_state();
+		  reset_tracking_sequence();
 		  move_to_capture_pose(500);
 		  HAL_Delay(600);
 		  fsm_state = TRACK_STATE_DETECTION;

@@ -11,6 +11,19 @@
 #define TAG_REG  	   0x20
 #define OBJECT_REG     0x30
 
+#define COLOR_RED_REG     0x10
+#define COLOR_GREEN_REG   0x19
+#define COLOR_BLUE_REG    0x22
+
+#define NUMBER_1_REG      0x40
+#define NUMBER_2_REG      0x49
+#define NUMBER_3_REG      0x52
+#define NUMBER_4_REG      0x5B
+#define NUMBER_5_REG      0x64
+
+#define RECOGNITION_RESULT_SIZE        9U
+#define COLOR_NUMBER_RESULT_SIZE       (RECOGNITION_RESULT_SIZE * 2U)
+
 typedef struct
 {
 	uint16_t w;
@@ -33,7 +46,8 @@ struct WonderMVHandle
 	uint8_t transmit_status;
 	uint8_t receive_status;
 	
-	uint8_t results[9];
+	uint8_t results[RECOGNITION_RESULT_SIZE];
+	uint8_t color_number_results[COLOR_NUMBER_RESULT_SIZE];
 	
 	uint8_t (*write_data)(WonderMVHandleTypeDef* self, uint8_t* pdata, uint16_t size);
 	uint8_t (*read_data)(WonderMVHandleTypeDef* self, uint8_t* pdata, uint16_t size);
@@ -53,6 +67,10 @@ void wonder_mv_init(void);
  * @return false 
  */
 bool wonder_mv_color_recognition(RecognitionHanleTypeDef* color);
+bool wonder_mv_color_number_recognition(RecognitionHanleTypeDef* color, RecognitionHanleTypeDef* number);
+bool wonder_mv_read_recognition(uint8_t reg, RecognitionHanleTypeDef* result);
+bool wonder_mv_color_recognition_by_id(uint8_t color_id, RecognitionHanleTypeDef* color);
+bool wonder_mv_number_recognition_by_id(uint8_t number_id, RecognitionHanleTypeDef* number);
 
 /**
  * @brief 人脸识别

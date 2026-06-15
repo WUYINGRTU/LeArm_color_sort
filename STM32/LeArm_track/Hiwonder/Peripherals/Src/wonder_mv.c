@@ -112,77 +112,127 @@ void wonder_mv_init()
 	wonder_mv.write_data = write_data;
 }
 
-bool wonder_mv_color_recognition(RecognitionHanleTypeDef* color)
+static void decode_recognition_result_from_buffer(const uint8_t* data, RecognitionHanleTypeDef* result)
 {
-	if(receive_from_device(&wonder_mv, COLOR_REG, wonder_mv.results, sizeof(wonder_mv.results)))
+	result->id = data[0];
+	result->position.x = BYTE_TO_HW(data[2], data[1]);
+	result->position.y = BYTE_TO_HW(data[4], data[3]);
+	result->position.w = BYTE_TO_HW(data[6], data[5]);
+	result->position.h = BYTE_TO_HW(data[8], data[7]);
+}
+
+static void decode_recognition_result(RecognitionHanleTypeDef* result)
+{
+	decode_recognition_result_from_buffer(wonder_mv.results, result);
+}
+
+bool wonder_mv_read_recognition(uint8_t reg, RecognitionHanleTypeDef* result)
+{
+	if(receive_from_device(&wonder_mv, reg, wonder_mv.results, sizeof(wonder_mv.results)))
 	{
 		if(!wait_receive_complete())
 		{
 			return false;
 		}
-		color->id = wonder_mv.results[0];
-		color->position.x = BYTE_TO_HW(wonder_mv.results[2], wonder_mv.results[1]);
-		color->position.y = BYTE_TO_HW(wonder_mv.results[4], wonder_mv.results[3]);
-		color->position.w = BYTE_TO_HW(wonder_mv.results[6], wonder_mv.results[5]);
-		color->position.h = BYTE_TO_HW(wonder_mv.results[8], wonder_mv.results[7]);
+		decode_recognition_result(result);
 		return true;
 	}
 
 	return false;
+}
+
+static uint8_t color_id_to_reg(uint8_t color_id)
+{
+	switch(color_id)
+	{
+		case 1:
+			return COLOR_RED_REG;
+		case 2:
+			return COLOR_GREEN_REG;
+		case 3:
+			return COLOR_BLUE_REG;
+		default:
+			return 0;
+	}
+}
+
+static uint8_t number_id_to_reg(uint8_t number_id)
+{
+	switch(number_id)
+	{
+		case 1:
+			return NUMBER_1_REG;
+		case 2:
+			return NUMBER_2_REG;
+		case 3:
+			return NUMBER_3_REG;
+		case 4:
+			return NUMBER_4_REG;
+		case 5:
+			return NUMBER_5_REG;
+		default:
+			return 0;
+	}
+}
+
+bool wonder_mv_color_recognition(RecognitionHanleTypeDef* color)
+{
+	return wonder_mv_read_recognition(COLOR_REG, color);
+}
+
+bool wonder_mv_color_number_recognition(RecognitionHanleTypeDef* color, RecognitionHanleTypeDef* number)
+{
+	if(receive_from_device(&wonder_mv, COLOR_REG, wonder_mv.color_number_results, sizeof(wonder_mv.color_number_results)))
+	{
+		if(!wait_receive_complete())
+		{
+			return false;
+		}
+
+		decode_recognition_result_from_buffer(&wonder_mv.color_number_results[0], color);
+		decode_recognition_result_from_buffer(&wonder_mv.color_number_results[RECOGNITION_RESULT_SIZE], number);
+		return true;
+	}
+
+	return false;
+}
+
+bool wonder_mv_color_recognition_by_id(uint8_t color_id, RecognitionHanleTypeDef* color)
+{
+	uint8_t reg = color_id_to_reg(color_id);
+
+	if(reg == 0 || !wonder_mv_read_recognition(reg, color))
+	{
+		return false;
+	}
+
+	return color->id == color_id;
+}
+
+bool wonder_mv_number_recognition_by_id(uint8_t number_id, RecognitionHanleTypeDef* number)
+{
+	uint8_t reg = number_id_to_reg(number_id);
+
+	if(reg == 0 || !wonder_mv_read_recognition(reg, number))
+	{
+		return false;
+	}
+
+	return number->id == number_id;
 }
 
 
 bool wonder_mv_face_detection(RecognitionHanleTypeDef* face)
 {
-	if(receive_from_device(&wonder_mv, FACE_REG, wonder_mv.results, sizeof(wonder_mv.results)))
-	{
-		if(!wait_receive_complete())
-		{
-			return false;
-		}
-		face->id = wonder_mv.results[0];
-		face->position.x = BYTE_TO_HW(wonder_mv.results[2], wonder_mv.results[1]);
-		face->position.y = BYTE_TO_HW(wonder_mv.results[4], wonder_mv.results[3]);
-		face->position.w = BYTE_TO_HW(wonder_mv.results[6], wonder_mv.results[5]);
-		face->position.h = BYTE_TO_HW(wonder_mv.results[8], wonder_mv.results[7]);
-		return true;
-	}
-
-	return false;
+	return wonder_mv_read_recognition(FACE_REG, face);
 }
 
 bool wonder_mv_tag_detection(RecognitionHanleTypeDef* tag)
 {
-	if(receive_from_device(&wonder_mv, TAG_REG, wonder_mv.results, sizeof(wonder_mv.results)))
-	{
-		if(!wait_receive_complete())
-		{
-			return false;
-		}
-		tag->id = wonder_mv.results[0];
-		tag->position.x = BYTE_TO_HW(wonder_mv.results[2], wonder_mv.results[1]);
-		tag->position.y = BYTE_TO_HW(wonder_mv.results[4], wonder_mv.results[3]);
-		tag->position.w = BYTE_TO_HW(wonder_mv.results[6], wonder_mv.results[5]);
-		tag->position.h = BYTE_TO_HW(wonder_mv.results[8], wonder_mv.results[7]);
-		return true;
-	}
-	return false;
+	return wonder_mv_read_recognition(TAG_REG, tag);
 }
 
 bool wonder_mv_object_detection(RecognitionHanleTypeDef* obj)
 {
-	if(receive_from_device(&wonder_mv, OBJECT_REG, wonder_mv.results, sizeof(wonder_mv.results)))
-	{
-		if(!wait_receive_complete())
-		{
-			return false;
-		}
-		obj->id = wonder_mv.results[0];
-		obj->position.x = BYTE_TO_HW(wonder_mv.results[2], wonder_mv.results[1]);
-		obj->position.y = BYTE_TO_HW(wonder_mv.results[4], wonder_mv.results[3]);
-		obj->position.w = BYTE_TO_HW(wonder_mv.results[6], wonder_mv.results[5]);
-		obj->position.h = BYTE_TO_HW(wonder_mv.results[8], wonder_mv.results[7]);
-		return true;
-	}
-	return false;
+	return wonder_mv_read_recognition(OBJECT_REG, obj);
 }
