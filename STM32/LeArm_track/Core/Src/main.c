@@ -51,6 +51,9 @@ typedef enum
 	TRACK_STATE_GRAB_DOWN,
 	TRACK_STATE_CLAW_CLOSE,
 	TRACK_STATE_LIFT,
+	TRACK_STATE_PUT_BACK_DOWN,
+	TRACK_STATE_CLAW_OPEN,
+	TRACK_STATE_RELEASE_LIFT,
 	TRACK_STATE_RETURN
 } TrackStateTypeDef;
 
@@ -619,12 +622,28 @@ int main(void)
 	  case TRACK_STATE_LIFT:
 		  robot_arm_coordinate_set(grab_x, grab_y, VISION_CAPTURE_Z_CM, 0, -90, 90, 1000);
 		  HAL_Delay(1100);
+		  fsm_state = TRACK_STATE_PUT_BACK_DOWN;
+		  break;
+
+	  case TRACK_STATE_PUT_BACK_DOWN:
+		  robot_arm_coordinate_set(grab_x, grab_y, VISION_GRAB_Z_CM, 0, -90, 90, 1000);
+		  HAL_Delay(1100);
+		  fsm_state = TRACK_STATE_CLAW_OPEN;
+		  break;
+
+	  case TRACK_STATE_CLAW_OPEN:
+		  robot_arm_claw_set(CLAW_OPEN_ANGLE, 0);
+		  HAL_Delay(500);
+		  fsm_state = TRACK_STATE_RELEASE_LIFT;
+		  break;
+
+	  case TRACK_STATE_RELEASE_LIFT:
+		  robot_arm_coordinate_set(grab_x, grab_y, VISION_CAPTURE_Z_CM, 0, -90, 90, 1000);
+		  HAL_Delay(1100);
 		  fsm_state = TRACK_STATE_RETURN;
 		  break;
 
 	  case TRACK_STATE_RETURN:
-		  robot_arm_claw_set(CLAW_OPEN_ANGLE, 0);
-		  HAL_Delay(500);
 		  move_to_capture_pose(500);
 		  HAL_Delay(600);
 		  advance_to_next_target();
