@@ -63,7 +63,7 @@ typedef enum
 	TARGET_NUMBER
 } TargetKindTypeDef;
 
-RecognitionHanleTypeDef color_result;
+RecognitionHanleTypeDef color_results[COLOR_RESULT_COUNT];
 RecognitionHanleTypeDef number_results[NUMBER_RESULT_COUNT];
 RecognitionHanleTypeDef vision_result;
 /* USER CODE END PTD */
@@ -126,6 +126,7 @@ uint8_t selected_color_id = COLOR_ID_RED;
 uint8_t selected_number_id = 1U;
 uint8_t stable_count;
 uint8_t lost_count;
+uint8_t tracking_step_count;
 uint8_t last_chassis_mode;
 uint8_t key_last_raw_state;
 uint8_t key_stable_state;
@@ -176,7 +177,10 @@ static void clear_recognition_result(RecognitionHanleTypeDef* result)
 
 static void reset_tracking_state(void)
 {
-	clear_recognition_result(&color_result);
+	for(uint8_t i = 0; i < COLOR_RESULT_COUNT; i++)
+	{
+		clear_recognition_result(&color_results[i]);
+	}
 	for(uint8_t i = 0; i < NUMBER_RESULT_COUNT; i++)
 	{
 		clear_recognition_result(&number_results[i]);
@@ -184,6 +188,7 @@ static void reset_tracking_state(void)
 	clear_recognition_result(&vision_result);
 	stable_count = 0;
 	lost_count = 0;
+	tracking_step_count = 0;
 	target_x = VISION_CAPTURE_X_CM;
 	target_y = VISION_CAPTURE_Y_CM;
 	grab_x = VISION_CAPTURE_X_CM;
@@ -346,6 +351,11 @@ static uint8_t is_valid_number_id(uint8_t id)
 	return id >= 1U && id <= 5U;
 }
 
+static uint8_t is_valid_color_id(uint8_t id)
+{
+	return id >= COLOR_ID_RED && id <= COLOR_ID_BLUE;
+}
+
 static uint8_t read_current_target(void)
 {
 	if(ps2_is_chassis_mode())
@@ -353,19 +363,24 @@ static uint8_t read_current_target(void)
 		return 0;
 	}
 
-	if(!wonder_mv_color_number_recognition(&color_result, number_results))
+	if(!wonder_mv_color_number_recognition(color_results, number_results))
 	{
 		return 0;
 	}
 
 	if(current_target == TARGET_COLOR)
 	{
-		if(color_result.id != selected_color_id)
+		if(!is_valid_color_id(selected_color_id))
+		{
+			selected_color_id = COLOR_ID_RED;
+		}
+
+		if(color_results[selected_color_id - 1U].id != selected_color_id)
 		{
 			return 0;
 		}
 
-		vision_result = color_result;
+		vision_result = color_results[selected_color_id - 1U];
 		return 1;
 	}
 
@@ -400,6 +415,15 @@ static void advance_to_next_target(void)
 static void handle_tracking_loss(void)
 {
 	stable_count = 0;
+
+	if(tracking_step_count > 0U)
+	{
+		lost_count = 0;
+		update_grab_target();
+		fsm_state = TRACK_STATE_APPROACH;
+		return;
+	}
+
 	lost_count++;
 
 	if(lost_count >= TRACK_LOST_MAX_FRAMES)
@@ -525,6 +549,7 @@ int main(void)
 				  target_y = VISION_CAPTURE_Y_CM;
 				  stable_count = 0;
 				  lost_count = 0;
+				  tracking_step_count = 0;
 				  fsm_state = TRACK_STATE_TRACK_Y;
 			  }
 		  }
@@ -561,6 +586,10 @@ int main(void)
 		  step_y = pixel_dx * VISION_Y_CM_PER_PIXEL * TRACK_CORRECTION_GAIN;
 		  step_y = clamp_float(step_y, -TRACK_MAX_STEP_Y_CM, TRACK_MAX_STEP_Y_CM);
 		  target_y = clamp_float(target_y + step_y, VISION_TARGET_MIN_Y_CM, VISION_TARGET_MAX_Y_CM);
+		  if(tracking_step_count < 255U)
+		  {
+			  tracking_step_count++;
+		  }
 		  robot_arm_coordinate_set(target_x, target_y, VISION_CAPTURE_Z_CM, 0, -90, 90, 80);
 		  HAL_Delay(90);
 		  break;
@@ -596,6 +625,10 @@ int main(void)
 		  step_x = pixel_dy * VISION_X_CM_PER_PIXEL * TRACK_CORRECTION_GAIN;
 		  step_x = clamp_float(step_x, -TRACK_MAX_STEP_X_CM, TRACK_MAX_STEP_X_CM);
 		  target_x = clamp_float(target_x + step_x, VISION_TARGET_MIN_X_CM, VISION_TARGET_MAX_X_CM);
+		  if(tracking_step_count < 255U)
+		  {
+			  tracking_step_count++;
+		  }
 		  robot_arm_coordinate_set(target_x, target_y, VISION_CAPTURE_Z_CM, 0, -90, 90, 80);
 		  HAL_Delay(90);
 		  break;

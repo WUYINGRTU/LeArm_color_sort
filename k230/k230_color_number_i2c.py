@@ -28,10 +28,11 @@ K230_NOTIFY_PIN = 14
 
 COLOR_LEGACY_REG = 0x00
 RESULT_ITEM_SIZE = 9
-LEGACY_COLOR_OFFSET = 0
-LEGACY_NUMBER_BASE_OFFSET = 9
+LEGACY_COLOR_BASE_OFFSET = 0
+LEGACY_COLOR_COUNT = 3
+LEGACY_NUMBER_BASE_OFFSET = RESULT_ITEM_SIZE * LEGACY_COLOR_COUNT
 LEGACY_NUMBER_COUNT = 5
-LEGACY_PACKET_SIZE = RESULT_ITEM_SIZE * (1 + LEGACY_NUMBER_COUNT)
+LEGACY_PACKET_SIZE = RESULT_ITEM_SIZE * (LEGACY_COLOR_COUNT + LEGACY_NUMBER_COUNT)
 
 COLOR_REGS = {
     1: 0x10,  # RED
@@ -112,8 +113,11 @@ def set_result_data(reg, target_id, cx, cy, w, h):
     set_result_slot(result_data[reg], 0, target_id, cx, cy, w, h)
 
 
-def set_legacy_color_data(target_id, cx, cy, w, h):
-    set_result_slot(result_data[COLOR_LEGACY_REG], LEGACY_COLOR_OFFSET, target_id, cx, cy, w, h)
+def set_legacy_color_data(color_id, cx, cy, w, h):
+    if color_id < 1 or color_id > LEGACY_COLOR_COUNT:
+        return
+    offset = LEGACY_COLOR_BASE_OFFSET + (color_id - 1) * RESULT_ITEM_SIZE
+    set_result_slot(result_data[COLOR_LEGACY_REG], offset, color_id, cx, cy, w, h)
 
 
 def set_legacy_number_data(number_id, cx, cy, w, h):
@@ -250,7 +254,6 @@ def label_to_number(labels, class_id):
 
 def update_color_results(color_img, osd_img):
     best_colors = {}
-    best_legacy_color = None
 
     for i in range(3):
         color_id = i + 1
@@ -278,16 +281,10 @@ def update_color_results(color_img, osd_img):
             if color_id not in best_colors or pixels > best_colors[color_id][0]:
                 best_colors[color_id] = (pixels, cx, cy, w, h, send_cx, send_cy, send_w, send_h)
 
-            if best_legacy_color is None or pixels > best_legacy_color[0]:
-                best_legacy_color = (pixels, color_id, send_cx, send_cy, send_w, send_h)
-
-    if best_legacy_color is not None:
-        _, color_id, send_cx, send_cy, send_w, send_h = best_legacy_color
-        set_legacy_color_data(color_id, send_cx, send_cy, send_w, send_h)
-
     for color_id, reg in COLOR_REGS.items():
         if color_id in best_colors:
             _, raw_cx, raw_cy, raw_w, raw_h, send_cx, send_cy, send_w, send_h = best_colors[color_id]
+            set_legacy_color_data(color_id, send_cx, send_cy, send_w, send_h)
             set_result_data(reg, color_id, send_cx, send_cy, send_w, send_h)
 
     return best_colors

@@ -22,8 +22,9 @@
 #define NUMBER_5_REG      0x64
 
 #define RECOGNITION_RESULT_SIZE        9U
+#define COLOR_RESULT_COUNT             3U
 #define NUMBER_RESULT_COUNT            5U
-#define COLOR_NUMBER_RESULT_SIZE       (RECOGNITION_RESULT_SIZE * (1U + NUMBER_RESULT_COUNT))
+#define COLOR_NUMBER_RESULT_SIZE       (RECOGNITION_RESULT_SIZE * (COLOR_RESULT_COUNT + NUMBER_RESULT_COUNT))
 
 typedef struct
 {
@@ -68,7 +69,7 @@ void wonder_mv_init(void);
  * @return false 
  */
 bool wonder_mv_color_recognition(RecognitionHanleTypeDef* color);
-bool wonder_mv_color_number_recognition(RecognitionHanleTypeDef* color, RecognitionHanleTypeDef* numbers);
+bool wonder_mv_color_number_recognition(RecognitionHanleTypeDef* colors, RecognitionHanleTypeDef* numbers);
 bool wonder_mv_read_recognition(uint8_t reg, RecognitionHanleTypeDef* result);
 bool wonder_mv_color_recognition_by_id(uint8_t color_id, RecognitionHanleTypeDef* color);
 bool wonder_mv_number_recognition_by_id(uint8_t number_id, RecognitionHanleTypeDef* number);
